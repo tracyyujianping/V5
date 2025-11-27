@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Copilot Industry 4.0 Network Estimator</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- 1. FIREBASE Module Imports -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        // setLogLevel must be imported from firebase-firestore.js
+        import { getFirestore, collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Set Firebase log level to Debug
+        setLogLevel('debug');
+
+        // Expose functions to the global window object
+        window.FB = {
+            initializeApp,
+            getAuth,
+            signInAnonymously,
+            signInWithCustomToken,
+            onAuthStateChanged,
+            getFirestore,
+            collection,
+            addDoc,
+            serverTimestamp,
+            query,
+            onSnapshot,
+            orderBy
+        };
+    </script>
+    
+    <style>
+        /* Set primary font */
+        body { font-family: Calibri, Candara, Segoe, "Segoe UI", Optima, Arial, sans-serif; }
+        .fade-in { animation: fadeIn 0.5s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Modal Overlay Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.7); /* Darker background to highlight the modal */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 50;
+        }
+
+        /* Print Styles - Optimization for Single Page PDF */
+        @media print {
+            /* 强制页面布局为单页 */
+            html, body {
+                height: 100%;
+                margin: 0 !important;
+                padding: 0 !important;
+                overflow: hidden; /* 防止打印预览出现滚动条 */
+            }
+            
+            /* 移除主容器的内边距，使其紧贴页面边缘，并确保所有内容都在单页内 */
+            .min-h-screen, #root {
+                min-height: auto !important; /* 移除最小高度限制 */
+                height: auto !important; /* 自适应内容高度 */
+                padding: 0 !important; /* 移除 padding */
+                margin: 0 !important; /* 移除 margin */
+            }
+            
+            .main, .grid-container {
+                display: block !important; /* 强制网格为块级，防止布局混乱 */
+                width: 100%;
+                margin: 0;
+                padding: 0;
+            }
+            
+            #input-panel, #result-panel {
+                /* 减少打印时的内边距，以便容纳更多内容 */
+                padding: 10px !important; 
+                margin-bottom: 5px; /* 减少间距 */
+                box-shadow: none !important;
+                border: 1px solid #ccc !important;
+                width: 100% !important;
+                max-width: none !important;
+                background-color: #ffffff !important;
+                color: #000000 !important;
+                page-break-inside: avoid; /* 防止在内部元素中断页 */
+            }
+            
+            /* 隐藏非必需的 UI 元素，包括页脚和 Leads 按钮 */
+            header, footer, .print-hide, .export-button, .notification-banner, .modal-overlay, .user-info {
+                display: none !important;
+            }
+
+            /* 调整文本和表格颜色 */
+            #result-panel table { color: #000; }
+            #result-panel thead { background-color: #e5e7eb !important; color: #374151 !important; }
+            #result-panel tbody tr { background-color: #fff !important; }
+            /* 确保背景色在打印时为白色 */
+            .bg-slate-50 { background-color: #ffffff !important; }
+            .bg-slate-800 { background-color: #ffffff !important; color: #000000 !important; }
+            .bg-slate-700\/80 { background-color: #f3f4f6 !important; border: 1px solid #e5e7eb !important; color: #000000 !important; }
+            
+            /* 打印水印 */
+            .watermark-container::before {
+                content: "For recommended vendor and detailed technical proposal please contact MyProNet2025@gmail.com";
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%) rotate(-45deg);
+                font-size: 24px;
+                font-weight: bold;
+                color: rgba(0, 0, 0, 0.1); 
+                pointer-events: none;
+                z-index: 9999;
+                white-space: nowrap;
+                letter-spacing: 2px;
+            }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const fmtMoney = (num) => "$" + Math.round(num).toLocaleString();
+
+        // Demo Password (hardcoded)
+        const SECRET_CODE = "pro2025"; 
+
+        // --- 1. Database Configuration ---
+        const DB = {
+            techMultipliers: { '5G': 1.0, '4G': 0.825 },
+            vendors: {
+                cost_efficient: { name: "Cost Efficient / Price Priority", multiplier: 1.0, desc: "Optimized for price performance and scalability." },
+                tier1: { name: "Tier 1 Supplier / Premium Vendor", multiplier: 1.75, desc: "Provides established solutions from major vendors (1.5x-2x price range)." }
+            },
+            basePrices: {
+                coreNetwork: { name: "Core Network (Lightweight)" }, 
+                smallCell: { min: 3900, max: 4100, name: "Small Cell (Indoor RAN, 25dBm)" },
+                outdoorUnit: { min: 40000, max: 42000, name: "All-in-One Outdoor RAN (20W)" },
+                cabling: { min: 3.5, max: 4.5, name: "Cabling and Accessories (per meter)" },
+                serviceRate: 0.15
+            },
+            coverage: {
+                office: { "700M": 125, "2.6G": 33, "3.5G": 25, "4.9G": 18 }, 
+                factory: { "700M": 150, "2.6G": 40, "3.5G": 30, "4.9G": 22 }, 
+                mine: { "700M": 1100, "2.6G": 295, "3.5G": 220, "4.9G": 156 }
+            }
+        };
+        
+        // --- 2. Password Input Modal ---
+        function PasswordModal({ onConfirm, onCancel }) {
+            const [password, setPassword] = useState('');
+            const [error, setError] = useState(false);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (password === SECRET_CODE) {
+                    onConfirm();
+                } else {
+                    setError(true);
+                    setPassword('');
+                }
+            };
+
+            return (
+                <div className="modal-overlay">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-8 relative animate-fade-in border-t-8 border-red-500">
+                        <button onClick={onCancel} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                        
+                        <div className="text-center mb-6">
+                            <h3 className="text-2xl font-bold text-slate-800">Password Verification</h3>
+                            <p className="text-gray-500 text-sm mt-2">Please enter the password to access saved records.</p>
+                        </div>
+
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-1">Access Password</label>
+                                <input 
+                                    required 
+                                    type="password" 
+                                    className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none ${error ? 'border-red-500' : 'border-gray-300'}`}
+                                    value={password} 
+                                    onChange={e => { setPassword(e.target.value); setError(false); }} 
+                                    placeholder="Enter Password" 
+                                />
+                                {error && <p className="text-xs text-red-500 mt-1">Incorrect password. Please try again.</p>}
+                            </div>
+                            
+                            <button type="submit" className="w-full mt-4 bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-bold transition-all shadow-lg flex justify-center items-center">
+                                <span>Verify and View Leads</span>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- 3. Leads Viewer Component (LeadsViewer) ---
+        function LeadsViewer({ db, userId, setViewMode, vendors }) {
+            const [leads, setLeads] = useState([]);
+            const [isLoading, setIsLoading] = useState(true);
+
+            useEffect(() => {
+                // If db or userId is not set, we cannot fetch data (e.g., in local environment without Firebase config)
+                if (!db || !userId || userId === 'LOCAL_DEMO_USER_ID') {
+                    if (userId === 'LOCAL_DEMO_USER_ID') {
+                        // Special handling for local demo mode
+                        setIsLoading(false);
+                        setLeads([]); // Ensure leads are empty
+                    }
+                    return;
+                }
+
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                // Private data path
+                const leadsPath = `artifacts/${appId}/users/${userId}/leads`;
+                const leadsRef = window.FB.collection(db, leadsPath);
+                
+                // Real-time listener for data changes, ordered by creation time descending
+                const q = window.FB.query(leadsRef, window.FB.orderBy('createdAt', 'desc'));
+
+                const unsubscribe = window.FB.onSnapshot(q, (snapshot) => {
+                    const fetchedLeads = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data(),
+                        // Format timestamp
+                        createdAt: doc.data().createdAt ? new Date(doc.data().createdAt.seconds * 1000).toLocaleString('en-US') : 'N/A'
+                    }));
+                    setLeads(fetchedLeads);
+                    setIsLoading(false);
+                }, (error) => {
+                    console.error("Error fetching leads: ", error);
+                    setIsLoading(false);
+                });
+
+                return () => unsubscribe();
+            }, [db, userId]);
+
+            return (
+                <div className="bg-white p-6 rounded-xl shadow-lg border border-blue-100 min-h-[600px] fade-in w-full max-w-4xl mx-auto">
+                    <h2 className="text-3xl font-bold mb-8 text-slate-800 border-b pb-3 flex justify-between items-center">
+                        Saved Quotation Records
+                        <button 
+                            onClick={() => setViewMode('estimator')}
+                            className="bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 px-4 rounded-lg font-medium text-sm transition-colors flex items-center gap-1"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                            Return to Estimator
+                        </button>
+                    </h2>
+
+                    {isLoading && (
+                        <div className="text-center py-12 text-blue-500 font-semibold">Loading data from Firestore...</div>
+                    )}
+
+                    {(!db || userId === 'LOCAL_DEMO_USER_ID') && (
+                        <div className="text-center py-12 text-red-500 border-2 border-dashed border-red-300 rounded-lg">
+                            <p className="text-xl font-semibold mb-2">Leads feature is disabled.</p>
+                            <p>Firebase configuration is missing (running locally). Data cannot be loaded or saved.</p>
+                        </div>
+                    )}
+
+                    {!isLoading && db && userId !== 'LOCAL_DEMO_USER_ID' && leads.length === 0 && (
+                        <div className="text-center py-12 text-gray-500 border-2 border-dashed border-gray-300 rounded-lg">
+                            <p className="text-xl font-semibold mb-2">No saved Leads found.</p>
+                            <p>Please export a PDF quote to save your data.</p>
+                        </div>
+                    )}
+
+                    {!isLoading && leads.length > 0 && (
+                        <div className="space-y-6">
+                            {leads.map((lead) => (
+                                <div key={lead.id} className="bg-gray-50 p-5 rounded-lg border border-gray-200 shadow-sm transition-shadow hover:shadow-md">
+                                    <div className="flex justify-between items-start mb-4 border-b pb-2">
+                                        <div className="font-bold text-xl text-blue-600">
+                                            {lead.name} ({lead.company})
+                                        </div>
+                                        <span className="text-xs text-gray-500 whitespace-nowrap">Saved At: {lead.createdAt}</span>
+                                    </div>
+                                    
+                                    {/* Customer Contact Info */}
+                                    <h4 className="font-semibold text-base mb-2 text-gray-700">Customer Contact Details:</h4>
+                                    <div className="grid grid-cols-2 text-sm gap-x-4 gap-y-1 mb-4">
+                                        <p><strong>Email:</strong> {lead.email}</p>
+                                        <p><strong>Phone:</strong> {lead.phone || 'N/A'}</p>
+                                    </div>
+
+                                    {/* Project Parameters */}
+                                    <h4 className="font-semibold text-base mt-3 mb-2 text-gray-700 border-t pt-3">Project Parameters:</h4>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 text-xs gap-x-4 gap-y-2">
+                                        <p><strong>Location:</strong> {lead.projectParams.location}</p>
+                                        <p><strong>Scenario:</strong> {lead.projectParams.scenario.toUpperCase()}</p>
+                                        <p><strong>Technology:</strong> <span className="font-mono bg-green-100 text-green-800 px-1 rounded">{lead.projectParams.technology}</span></p>
+                                        <p><strong>Vendor:</strong> {vendors[lead.projectParams.vendor]?.name.split(' / ')[0] || lead.projectParams.vendor}</p>
+                                        <p><strong>Deployment:</strong> {lead.projectParams.deployment === 'indoor' ? 'Indoor' : 'Outdoor'}</p>
+                                        <p><strong>Area/Length:</strong> {lead.projectParams.area} {lead.projectParams.scenario === 'mine' ? 'meters' : 'sq meters'}</p>
+                                        <p><strong>Frequency:</strong> {lead.projectParams.freq}</p>
+                                        <p><strong>Services:</strong> <span className={`font-mono px-1 rounded ${lead.projectParams.includeServices ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-800'}`}>{lead.projectParams.includeServices ? 'Included' : 'Excluded'}</span></p>
+                                    </div>
+
+                                    {/* Result Summary */}
+                                    <div className="mt-4 pt-3 border-t border-gray-300">
+                                        <p>
+                                            <strong>Total Estimated Cost:</strong> 
+                                            <span className="font-bold text-lg text-green-700 ml-2">
+                                                {fmtMoney(lead.projectResult.grandTotalMin)} - {fmtMoney(lead.projectResult.grandTotalMax)}
+                                            </span>
+                                        </p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+
+        // --- 4. Lead Capture Modal ---
+        function LeadModal({ onClose, onSubmit, isSaving, isLocal }) {
+            const [form, setForm] = useState({ name: '', email: '', company: '', phone: '' });
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onSubmit(form);
+            };
+
+            return (
+                <div className="modal-overlay">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-8 relative animate-fade-in">
+                        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                        
+                        <div className="text-center mb-6">
+                            <h3 className="text-2xl font-bold text-slate-800">Get Your Detailed Quotation</h3>
+                            <p className="text-gray-500 text-sm mt-2">To download the PDF and receive vendor recommendations, please provide your contact details.</p>
+                        </div>
+                        
+                        {isLocal && (
+                            <div className="bg-amber-100 border-l-4 border-amber-500 text-amber-700 p-4 mb-4 rounded" role="alert">
+                                <p className="font-bold">Local Mode Warning</p>
+                                <p className="text-sm">Data will NOT be saved to Firestore, but the print/PDF function will be triggered immediately.</p>
+                            </div>
+                        )}
+
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-1">Name</label>
+                                <input required type="text" className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                    value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="John Doe" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-1">Company Email</label>
+                                <input required type="email" className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                    value={form.email} onChange={e => setForm({...form, email: e.target.value})} placeholder="john.doe@company.com" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-1">Company Name</label>
+                                <input required type="text" className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                    value={form.company} onChange={e => setForm({...form, company: e.target.value})} placeholder="Acme Corp" />
+                            </div>
+                             <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-1">Phone Number (Optional)</label>
+                                <input type="tel" className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                    value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} placeholder="Phone Number" />
+                            </div>
+                            
+                            <button type="submit" disabled={isSaving} className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-bold transition-all shadow-lg flex justify-center items-center">
+                                {isSaving ? (<span>Saving...</span>) : (<span>Unlock and Download PDF</span>)}
+                            </button>
+                            <p className="text-xs text-center text-gray-400 mt-2">We value your privacy. Your data is secure.</p>
+                        </form>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- 5. Main Application Component (App) ---
+        function App() {
+            const [input, setInput] = useState({
+                area: 5000, scenario: 'factory', freq: '3.5G', users: 50,
+                vendor: 'cost_efficient', deployment: 'indoor', includeServices: false,
+                location: 'Los Angeles, CA', technology: '5G'
+            });
+            const [result, setResult] = useState(null);
+            const [showModal, setShowModal] = useState(false);
+            const [isSaving, setIsSaving] = useState(false);
+            
+            // View State
+            const [viewMode, setViewMode] = useState('estimator'); 
+            const [isLeadsPasswordConfirmed, setIsLeadsPasswordConfirmed] = useState(false);
+            const [showLeadsPasswordModal, setShowLeadsPasswordModal] = useState(false);
+            
+            // Firebase State
+            const [db, setDb] = useState(null);
+            const [auth, setAuth] = useState(null);
+            const [userId, setUserId] = useState(null);
+            const [isLocalMode, setIsLocalMode] = useState(false); // New state to track local running
+            const [isAuthReady, setIsAuthReady] = useState(false); // Tracks if auth check is complete
+
+            // --- Firebase Initialization ---
+            useEffect(() => {
+                if (!window.FB) return;
+                
+                // 运行时环境会自动注入这些全局变量：__app_id, __firebase_config, __initial_auth_token
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+                const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+                // 检查 Firebase 配置是否缺失 (通常在本地运行时发生)
+                if (Object.keys(firebaseConfig).length === 0) {
+                    console.warn("Running locally: Firebase configuration missing. Leads feature will be disabled.");
+                    // 设置一个演示 ID 并启用本地模式
+                    setUserId('LOCAL_DEMO_USER_ID'); 
+                    setIsLocalMode(true);
+                    setIsAuthReady(true); // 即使是本地模式，认证过程也算完成了
+                    return; 
+                }
+
+                try {
+                    const app = window.FB.initializeApp(firebaseConfig);
+                    const firestore = window.FB.getFirestore(app);
+                    const authentication = window.FB.getAuth(app);
+                    setDb(firestore);
+                    setAuth(authentication);
+                    setIsLocalMode(false); // 确认运行在具有配置的环境中
+
+                    const unsubscribe = window.FB.onAuthStateChanged(authentication, async (user) => {
+                        if (user) {
+                            setUserId(user.uid);
+                        } else {
+                            if (initialAuthToken) await window.FB.signInWithCustomToken(authentication, initialAuthToken);
+                            else await window.FB.signInAnonymously(authentication);
+                            // Set userId after successful sign-in
+                            setUserId(authentication.currentUser.uid);
+                        }
+                        setIsAuthReady(true); // 认证流程结束
+                    });
+                    return () => unsubscribe();
+                } catch (e) { 
+                    console.error("Firebase Init Error:", e);
+                    // 发生错误时的回退处理
+                    setUserId('FIREBASE_ERROR');
+                    setIsAuthReady(true);
+                }
+            }, []);
+            
+            // --- Toggle View Logic (including password check) ---
+            const handleViewToggle = () => {
+                if (viewMode === 'estimator') {
+                    // Check password when switching from estimator to Leads viewer
+                    if (isLeadsPasswordConfirmed) {
+                        setViewMode('viewer');
+                    } else {
+                        setShowLeadsPasswordModal(true);
+                    }
+                } else {
+                    // Returning from Leads viewer to estimator
+                    setViewMode('estimator');
+                }
+            };
+            
+            const handlePasswordConfirm = () => {
+                setShowLeadsPasswordModal(false);
+                // Allow viewing leads if password confirmed
+                setIsLeadsPasswordConfirmed(true); 
+                setViewMode('viewer');
+            };
+            
+            const handlePasswordCancel = () => {
+                setShowLeadsPasswordModal(false);
+            };
+
+            // --- Calculation Logic ---
+            const calculate = () => {
+                const { area, scenario, freq, users, vendor, deployment, includeServices, technology } = input;
+                const radius = DB.coverage[scenario][freq];
+                const vendorMultiplier = DB.vendors[vendor].multiplier;
+                const techMultiplier = DB.techMultipliers[technology];
+
+                let unitCount = 0;
+                if (scenario === 'mine') {
+                    unitCount = Math.ceil(area / (radius * 2));
+                } else {
+                    const singleCoverage = Math.PI * radius * radius * 0.6;
+                    unitCount = Math.ceil(area / singleCoverage);
+                }
+                unitCount = Math.max(1, unitCount);
+
+                const corePriceMin = users < 500 ? 28000 : 46000;
+                const corePriceMax = corePriceMin * 1.05;
+                
+                let items = [];
+                if (deployment === 'indoor') {
+                    const smallCellCount = unitCount;
+                    const cableLength = smallCellCount * 80;
+                    items = [
+                        { name: DB.basePrices.coreNetwork.name, min: corePriceMin, max: corePriceMax, count: 1, unit: "Set" },
+                        { ...DB.basePrices.smallCell, count: smallCellCount, unit: "Unit" },
+                        { ...DB.basePrices.cabling, count: cableLength, unit: "m" }
+                    ];
+                } else {
+                    const outdoorUnitCount = unitCount;
+                    const cableLength = outdoorUnitCount * 50;
+                    items = [
+                        { name: DB.basePrices.coreNetwork.name, min: corePriceMin, max: corePriceMax, count: 1, unit: "Set" },
+                        { ...DB.basePrices.outdoorUnit, count: outdoorUnitCount, unit: "Unit" },
+                        { ...DB.basePrices.cabling, count: cableLength, unit: "m" }
+                    ];
+                }
+
+                items = items.map(item => ({
+                    ...item,
+                    min: Math.round(item.min * vendorMultiplier * techMultiplier),
+                    max: Math.round(item.max * vendorMultiplier * techMultiplier)
+                }));
+                
+                let totalMin = 0, totalMax = 0;
+                items.forEach(item => {
+                    item.subtotalMin = item.min * item.count;
+                    item.subtotalMax = item.max * item.count;
+                    totalMin += item.subtotalMin;
+                    totalMax += item.subtotalMax;
+                });
+
+                let serviceFeeMin = 0, serviceFeeMax = 0;
+                if (includeServices) {
+                    serviceFeeMin = totalMin * DB.basePrices.serviceRate;
+                    serviceFeeMax = totalMax * DB.basePrices.serviceRate;
+                }
+
+                setResult({
+                    items,
+                    hardwareMin: totalMin, hardwareMax: totalMax,
+                    serviceMin: serviceFeeMin, serviceMax: serviceFeeMax,
+                    grandTotalMin: totalMin + serviceFeeMin, grandTotalMax: totalMax + serviceFeeMax,
+                    unitName: deployment === 'indoor' ? 'Small Cells' : 'All-In-One RAN Units'
+                });
+            };
+
+            useEffect(() => { calculate(); }, [input]);
+
+
+            // --- Lead Saving and Export (Preserved to include all necessary data) ---
+            const handleLeadSubmit = async (leadData) => {
+                setIsSaving(true);
+
+                // If in local mode, skip Firestore save
+                if (isLocalMode) {
+                    console.log("Local mode detected. Skipping Firestore save.");
+                }
+                else if (db && userId && userId !== 'FIREBASE_ERROR') {
+                    try {
+                        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                        // Storage Path: /artifacts/{appId}/users/{userId}/leads
+                        const leadsRef = window.FB.collection(db, `artifacts/${appId}/users/${userId}/leads`);
+                        
+                        await window.FB.addDoc(leadsRef, {
+                            ...leadData, // Contains customer contact details
+                            projectParams: input, // Contains all project parameters
+                            projectResult: result, // Contains all calculation results
+                            createdAt: window.FB.serverTimestamp()
+                        });
+                        console.log("Lead saved successfully");
+                    } catch (err) {
+                        console.error("Error saving lead:", err);
+                    }
+                }
+                
+                setIsSaving(false);
+                setShowModal(false);
+                // Trigger PDF print
+                setTimeout(() => window.print(), 500); 
+            };
+            
+            // --- Main Render Logic ---
+            const displayUserId = isAuthReady 
+                                ? (userId === 'LOCAL_DEMO_USER_ID' ? 'Local Demo' : userId) 
+                                : 'Authenticating...';
+
+            return (
+                <div className="min-h-screen p-4 md:p-8 max-w-5xl mx-auto watermark-container flex flex-col">
+                    
+                    {/* Top Header */}
+                    <header className="mb-8 flex flex-col items-center justify-center text-center print-hide">
+                        <div className="flex flex-col items-center gap-2 mb-2">
+                            {/* Logo SVG */}
+                            <div className="mb-2"> 
+                                <svg width="60" height="60" viewBox="0 0 100 100" className="drop-shadow-lg transform -rotate-6 hover:rotate-0 transition-transform duration-300">
+                                    <defs><filter id="inset-shadow"><feOffset dx="0" dy="2"/><feGaussianBlur stdDeviation="2" result="offset-blur"/><feComposite operator="out" in="SourceGraphic" in2="offset-blur" result="inverse"/><feFlood floodColor="black" floodOpacity="0.2" result="color"/><feComposite operator="in" in="color" in2="inverse" result="shadow"/><feComposite operator="over" in="shadow" in2="SourceGraphic"/></filter></defs>
+                                    <rect x="5" y="25" width="90" height="60" rx="4" fill="#E3000B" stroke="#b30000" strokeWidth="2" filter="url(#inset-shadow)" />
+                                    <circle cx="25" cy="25" r="12" fill="#E3000B" stroke="#b30000" strokeWidth="1" />
+                                    <circle cx="75" cy="25" r="12" fill="#E3000B" stroke="#b30000" strokeWidth="1" />
+                                    <text x="50" y="65" textAnchor="middle" fontSize="16" fill="white" fontWeight="bold">ProNet</text>
+                                </svg>
+                            </div>
+                            <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight leading-none">Copilot Industry 4.0</h1>
+                            <p className="text-xl font-medium text-gray-500 mt-1">Private Mobile Network Instant Bill of Materials Estimator</p>
+                        </div>
+                    </header>
+                    
+                    {/* Main Content Area - using flex-1 to ensure LeadsViewer fills space */}
+                    <main className="flex-1">
+                        {/* Conditional Rendering of Views */}
+                        {viewMode === 'estimator' && (
+                            <div className="grid md:grid-cols-12 gap-6 grid-container fade-in">
+                                {/* LEFT: Input Panel */}
+                                <div id="input-panel" className="md:col-span-5 bg-white p-6 rounded-xl shadow-lg border border-blue-100 h-fit">
+                                    <h2 className="text-xl font-semibold mb-6 flex items-center text-slate-800">
+                                        <span className="bg-blue-600 text-white w-7 h-7 rounded-full flex items-center justify-center text-sm mr-2 shadow-sm">1</span> Project Parameters
+                                    </h2>
+                                    <div className="space-y-5">
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-700 mb-2">Project Location</label>
+                                            <input type="text" className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50"
+                                                value={input.location} onChange={(e) => setInput({...input, location: e.target.value})} placeholder="City, Country" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-700 mb-2">Preferred Technology</label>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                {['4G', '5G'].map(tech => (
+                                                    <button key={tech} onClick={() => setInput({...input, technology: tech})}
+                                                        className={`py-2 px-1 rounded-lg border text-sm transition-all ${input.technology === tech ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                                                        <div className="font-bold">{tech}</div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            <p className="text-xs text-gray-400 mt-1 text-center">Selecting 4G: Hardware cost estimated to decrease by 17.5%.</p>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-700 mb-2">Deployment Type</label>
+                                            <div className="flex gap-4">
+                                                <button onClick={() => setInput({...input, deployment: 'indoor'})} className={`flex-1 py-2 px-4 rounded-lg border text-sm transition-all ${input.deployment === 'indoor' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}><span className='font-bold'>Indoor</span></button>
+                                                <button onClick={() => setInput({...input, deployment: 'outdoor'})} className={`flex-1 py-2 px-4 rounded-lg border text-sm transition-all ${input.deployment === 'outdoor' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}><span className='font-bold'>Outdoor</span></button>
+                                            </div>
+                                            <p className="text-xs text-gray-400 mt-1">Indoor: 25dBm Small Cell. Outdoor: 20W All-in-One RAN.</p>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-700 mb-2">Equipment Vendor</label>
+                                            <select className="w-full p-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                                value={input.vendor} onChange={(e) => setInput({...input, vendor: e.target.value})}>
+                                                {Object.entries(DB.vendors).map(([key, val]) => (<option key={key} value={key}>{val.name}</option>))}
+                                            </select>
+                                            <p className="text-xs text-blue-600 mt-1">{DB.vendors[input.vendor].desc}</p>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-700 mb-2">Scenario</label>
+                                            <select className="w-full p-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                                value={input.scenario} onChange={(e) => setInput({...input, scenario: e.target.value})}>
+                                                <option value="office">Office (High Partition/Loss)</option>
+                                                <option value="factory">Smart Factory (Open Space/Low Loss)</option>
+                                                <option value="mine">Mine/Tunnel (Linear Coverage)</option>
+                                            </select>
+                                            <p className="text-xs text-gray-400 mt-1">Coverage radius adjusts based on expected partition/penetration loss.</p>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-700 mb-2">{input.scenario === 'mine' ? 'Total Length (meters)' : 'Total Area (sq meters)'}</label>
+                                            <input type="number" className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-shadow"
+                                                value={input.area} onChange={(e) => setInput({...input, area: parseInt(e.target.value) || 0})} />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-700 mb-2">Frequency Band</label>
+                                            <div className="grid grid-cols-4 gap-2">
+                                                {['700M', '2.6G', '3.5G', '4.9G'].map(f => (
+                                                    <button key={f} onClick={() => setInput({...input, freq: f})} className={`py-2 px-1 rounded-lg border text-sm transition-all ${input.freq === f ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}><div className="font-bold">{f}</div></button>
+                                                ))}
+                                            </div>
+                                            <div className="text-xs text-gray-400 mt-1 text-center">Higher frequency provides higher capacity but smaller coverage radius.</div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-700 mb-2">Estimated Devices/Cameras</label>
+                                            <input type="number" className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                                value={input.users} onChange={(e) => setInput({...input, users: parseInt(e.target.value) || 0})} />
+                                            <p className="text-xs text-gray-400 mt-1">Device count determines Core Network pricing ($28k or $46k).</p>
+                                        </div>
+                                        <div className="flex items-center justify-between py-3 border-t border-gray-200 pt-5">
+                                            <label htmlFor="service-toggle" className="text-sm font-bold text-gray-700 select-none">Include Services (Design, Installation)</label>
+                                            <div className="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in">
+                                                <input type="checkbox" id="service-toggle" checked={input.includeServices} onChange={(e) => setInput({...input, includeServices: e.target.checked})} className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-200" />
+                                                <label htmlFor="service-toggle" className="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* RIGHT: Result Panel */}
+                                <div id="result-panel" className="md:col-span-7 bg-slate-800 text-white p-6 rounded-xl shadow-lg relative overflow-hidden fade-in flex flex-col">
+                                    <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none print-hide">
+                                        <svg width="150" height="150" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+                                    </div>
+                                    <h2 className="text-xl font-semibold mb-6 flex items-center z-10">
+                                        <span className="bg-green-500 text-white w-7 h-7 rounded-full flex items-center justify-center text-sm mr-2 shadow-sm">2</span> Bill of Materials (BOM) and Total Cost
+                                    </h2>
+                                    {result && (
+                                        <div className="space-y-5 z-10 flex-1 flex flex-col">
+                                            <div className="bg-slate-700/80 backdrop-blur-sm p-5 rounded-lg border border-slate-600 shadow-inner">
+                                                <div className="text-slate-400 text-sm mb-1">Project Summary (Location: {input.location})</div>
+                                                <div className="text-4xl font-bold text-green-400 tracking-tight">{fmtMoney(result.grandTotalMin)} - {fmtMoney(result.grandTotalMax)}</div>
+                                                <div className="flex justify-between items-end mt-2 text-sm">
+                                                    <div className="text-xs text-slate-400">*Includes Hardware{input.includeServices ? ' and Services' : ''}</div>
+                                                    <div className="flex gap-2"><div className="bg-blue-600 px-2 py-1 rounded text-white font-bold">{input.technology}</div><div className="bg-slate-600 px-2 py-1 rounded text-white">{DB.vendors[input.vendor].name.split(' / ')[0]}</div></div>
+                                                </div>
+                                            </div>
+                                            <div className="overflow-x-auto rounded-lg border border-slate-600">
+                                                <table className="w-full text-sm text-left">
+                                                    <thead className="text-xs text-slate-300 uppercase bg-slate-900/50">
+                                                        <tr><th className="px-3 py-3">Item</th><th className="px-3 py-3 text-center">Quantity</th><th className="px-3 py-3 text-right">Est. Cost (Minimum)</th></tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-700 bg-slate-800">
+                                                        {result.items.map((item, idx) => (
+                                                            <tr key={idx} className="hover:bg-slate-700/50 transition-colors">
+                                                                <td className="px-3 py-3 font-medium text-slate-200">{item.name}</td>
+                                                                <td className="px-3 py-3 text-center text-blue-300 font-bold whitespace-nowrap">{item.count} <span className="text-xs font-normal text-slate-500">{item.unit}</span></td>
+                                                                <td className="px-3 py-3 text-right text-slate-300 font-mono">{fmtMoney(item.subtotalMin)}</td>
+                                                            </tr>
+                                                        ))}
+                                                        <tr className={`transition-opacity ${input.includeServices ? 'bg-slate-700/20 opacity-100' : 'opacity-50'}`}>
+                                                            <td className="px-3 py-3 text-slate-400 italic">Services (Design, Install)</td><td className="px-3 py-3 text-center text-slate-500">-</td>
+                                                            <td className="px-3 py-3 text-right text-slate-400 font-mono">{input.includeServices ? fmtMoney(result.serviceMin) : "$0 (Not Included)"}</td>
+                                                        </tr>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3 mt-2">
+                                                <div className="bg-slate-700/40 p-3 rounded-lg text-center border border-slate-600/50"><div className="text-xs text-slate-400 uppercase tracking-wider">Cell Radius (Calculated)</div><div className="font-bold text-lg">{DB.coverage[input.scenario][input.freq]}m</div></div>
+                                                <div className="bg-slate-700/40 p-3 rounded-lg text-center border border-slate-600/50"><div className="text-xs text-slate-400 uppercase tracking-wider">Total {result.unitName}</div><div className="font-bold text-lg text-blue-400">{result.items.find(i => i.name.includes(input.deployment === 'indoor' ? 'Small Cell' : 'All-in-One'))?.count || 0}</div></div>
+                                            </div>
+                                            <div className="mt-auto pt-4 flex flex-col gap-3">
+                                                <button className="export-button w-full bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white py-3 rounded-lg font-bold transition-all shadow-lg hover:shadow-blue-500/30 flex justify-center items-center gap-2"
+                                                    onClick={() => setShowModal(true)}>
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                                                    Export PDF Quote (Saves Data)
+                                                </button>
+                                                <div className="bg-slate-900 border-l-4 border-amber-500 p-4 rounded-lg shadow-xl text-center">
+                                                    <div className="text-xs font-bold uppercase text-amber-400 mb-1">Detailed Proposal</div>
+                                                    <p className="text-sm font-medium text-slate-200">For recommended vendor and detailed technical proposal, please contact:</p>
+                                                    <p className="text-lg font-bold text-amber-500 mt-2 break-all" style={{fontFamily: 'Calibri, Candara, Segoe, "Segoe UI", Optima, Arial, sans-serif'}}>
+                                                        <a href="mailto:MyProNet2025@gmail.com" className="text-amber-500 hover:text-amber-300 transition-colors underline">MyProNet2025@gmail.com</a>
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Leads Viewer Mode */}
+                        {viewMode === 'viewer' && (
+                            <LeadsViewer db={db} userId={userId} setViewMode={handleViewToggle} vendors={DB.vendors} />
+                        )}
+                    </main>
+
+                    {/* Bottom Footer (includes discreet Leads viewing button and User ID) */}
+                    <footer className="mt-12 text-center text-gray-400 text-sm pb-8 print-hide">
+                        {/* Mandatory display of userId for multi-user data path distinction */}
+                        <div className="user-info text-xs text-gray-400 mb-2 max-w-full overflow-x-auto p-1 border border-gray-200 rounded-lg whitespace-nowrap inline-block">
+                            Current User ID: <span className="font-mono text-slate-600">{displayUserId}</span>
+                        </div>
+                        <p className="mb-1">© 2025 ProNet Team | Beta v1.7 | Mode: {isLocalMode ? 'Local Demo (No Data Save)' : 'Deployment (Firebase Ready)'}</p>
+                        <p className="text-xs mt-2 max-w-2xl mx-auto">Disclaimer: This tool provides rough estimates only based on typical industry values. Actual costs depend on site survey, wall materials, and specific vendor negotiations. Transmission line rental and electricity costs are not included.</p>
+                        
+                        {/* Moved, discreet Leads viewing button */}
+                        <div className="mt-3">
+                            <button 
+                                onClick={handleViewToggle}
+                                className="text-xs text-gray-500 hover:text-gray-700 underline font-medium transition-colors p-1"
+                            >
+                                {viewMode === 'estimator' ? 'View Saved Leads >>' : '<< Return to Estimator'}
+                            </button>
+                        </div>
+                    </footer>
+                    
+                    {/* Render Modals */}
+                    {showModal && <LeadModal onClose={() => setShowModal(false)} onSubmit={handleLeadSubmit} isSaving={isSaving} isLocal={isLocalMode} />}
+                    {showLeadsPasswordModal && <PasswordModal onConfirm={handlePasswordConfirm} onCancel={handlePasswordCancel} />}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
