@@ -12,7 +12,7 @@
     <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    <!-- 1. FIREBASE Module Imports -->
+    <!-- 1. FIREBASE Module Imports (Correct Way for v9+) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -20,9 +20,11 @@
         import { getFirestore, collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Set Firebase log level to Debug
-        setLogLevel('debug');
+        try {
+            setLogLevel('debug');
+        } catch (e) { console.warn("Could not set log level"); }
 
-        // Expose functions to the global window object
+        // Expose functions to the global window object so React can use them
         window.FB = {
             initializeApp,
             getAuth,
@@ -37,6 +39,8 @@
             onSnapshot,
             orderBy
         };
+        
+        console.log("Firebase modules loaded into window.FB");
     </script>
     
     <style>
@@ -61,57 +65,55 @@
 
         /* Print Styles - Optimization for Single Page PDF */
         @media print {
-            /* 强制页面布局为单页 */
+            /* Force single page layout behavior */
             html, body {
                 height: 100%;
                 margin: 0 !important;
                 padding: 0 !important;
-                overflow: hidden; /* 防止打印预览出现滚动条 */
+                overflow: hidden; 
             }
             
-            /* 移除主容器的内边距，使其紧贴页面边缘，并确保所有内容都在单页内 */
+            /* Reset main container */
             .min-h-screen, #root {
-                min-height: auto !important; /* 移除最小高度限制 */
-                height: auto !important; /* 自适应内容高度 */
-                padding: 0 !important; /* 移除 padding */
-                margin: 0 !important; /* 移除 margin */
+                min-height: auto !important;
+                height: auto !important;
+                padding: 0 !important; 
+                margin: 0 !important;
             }
             
             .main, .grid-container {
-                display: block !important; /* 强制网格为块级，防止布局混乱 */
+                display: block !important;
                 width: 100%;
                 margin: 0;
                 padding: 0;
             }
             
             #input-panel, #result-panel {
-                /* 减少打印时的内边距，以便容纳更多内容 */
                 padding: 10px !important; 
-                margin-bottom: 5px; /* 减少间距 */
+                margin-bottom: 5px; 
                 box-shadow: none !important;
                 border: 1px solid #ccc !important;
                 width: 100% !important;
                 max-width: none !important;
                 background-color: #ffffff !important;
                 color: #000000 !important;
-                page-break-inside: avoid; /* 防止在内部元素中断页 */
+                page-break-inside: avoid; 
             }
             
-            /* 隐藏非必需的 UI 元素，包括页脚和 Leads 按钮 */
+            /* Hide UI elements */
             header, footer, .print-hide, .export-button, .notification-banner, .modal-overlay, .user-info {
                 display: none !important;
             }
 
-            /* 调整文本和表格颜色 */
+            /* Adjust colors for print */
             #result-panel table { color: #000; }
             #result-panel thead { background-color: #e5e7eb !important; color: #374151 !important; }
             #result-panel tbody tr { background-color: #fff !important; }
-            /* 确保背景色在打印时为白色 */
             .bg-slate-50 { background-color: #ffffff !important; }
             .bg-slate-800 { background-color: #ffffff !important; color: #000000 !important; }
             .bg-slate-700\/80 { background-color: #f3f4f6 !important; border: 1px solid #e5e7eb !important; color: #000000 !important; }
             
-            /* 打印水印 */
+            /* Watermark */
             .watermark-container::before {
                 content: "For recommended vendor and detailed technical proposal please contact MyProNet2025@gmail.com";
                 position: fixed;
@@ -139,6 +141,17 @@
 
         // Demo Password (hardcoded)
         const SECRET_CODE = "pro2025"; 
+
+        // Hardcoded User Configuration for Fallback
+        const USER_FIREBASE_CONFIG = {
+            apiKey: "AIzaSyDpq-M2tdbMPq1jZMjRmZc_kV2uRr8zYAo",
+            authDomain: "g-copilot.firebaseapp.com",
+            projectId: "g-copilot",
+            storageBucket: "g-copilot.firebasestorage.app",
+            messagingSenderId: "248418063508",
+            appId: "1:248418063508:web:1aa604e6552a7ad8805081",
+            measurementId: "G-NTYFL4KFL4"
+        };
 
         // --- 1. Database Configuration ---
         const DB = {
@@ -217,40 +230,41 @@
             const [isLoading, setIsLoading] = useState(true);
 
             useEffect(() => {
-                // If db or userId is not set, we cannot fetch data (e.g., in local environment without Firebase config)
-                if (!db || !userId || userId === 'LOCAL_DEMO_USER_ID') {
-                    if (userId === 'LOCAL_DEMO_USER_ID') {
-                        // Special handling for local demo mode
+                if (!db || !userId || userId === 'LOCAL_DEMO_USER_ID' || userId === 'FIREBASE_ERROR') {
+                    if (userId !== 'Authenticating...') { 
                         setIsLoading(false);
-                        setLeads([]); // Ensure leads are empty
                     }
                     return;
                 }
 
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                // Private data path
                 const leadsPath = `artifacts/${appId}/users/${userId}/leads`;
-                const leadsRef = window.FB.collection(db, leadsPath);
                 
-                // Real-time listener for data changes, ordered by creation time descending
-                const q = window.FB.query(leadsRef, window.FB.orderBy('createdAt', 'desc'));
+                try {
+                    const leadsRef = window.FB.collection(db, leadsPath);
+                    const q = window.FB.query(leadsRef, window.FB.orderBy('createdAt', 'desc'));
 
-                const unsubscribe = window.FB.onSnapshot(q, (snapshot) => {
-                    const fetchedLeads = snapshot.docs.map(doc => ({
-                        id: doc.id,
-                        ...doc.data(),
-                        // Format timestamp
-                        createdAt: doc.data().createdAt ? new Date(doc.data().createdAt.seconds * 1000).toLocaleString('en-US') : 'N/A'
-                    }));
-                    setLeads(fetchedLeads);
-                    setIsLoading(false);
-                }, (error) => {
-                    console.error("Error fetching leads: ", error);
-                    setIsLoading(false);
-                });
+                    const unsubscribe = window.FB.onSnapshot(q, (snapshot) => {
+                        const fetchedLeads = snapshot.docs.map(doc => ({
+                            id: doc.id,
+                            ...doc.data(),
+                            createdAt: doc.data().createdAt ? new Date(doc.data().createdAt.seconds * 1000).toLocaleString('en-US') : 'N/A'
+                        }));
+                        setLeads(fetchedLeads);
+                        setIsLoading(false);
+                    }, (error) => {
+                        console.error("Error fetching leads: ", error);
+                        setIsLoading(false);
+                    });
 
-                return () => unsubscribe();
+                    return () => unsubscribe();
+                } catch (e) {
+                    console.error("LeadsViewer Error:", e);
+                    setIsLoading(false);
+                }
             }, [db, userId]);
+
+            const isConnectionError = userId === 'FIREBASE_ERROR' || !db;
 
             return (
                 <div className="bg-white p-6 rounded-xl shadow-lg border border-blue-100 min-h-[600px] fade-in w-full max-w-4xl mx-auto">
@@ -269,21 +283,22 @@
                         <div className="text-center py-12 text-blue-500 font-semibold">Loading data from Firestore...</div>
                     )}
 
-                    {(!db || userId === 'LOCAL_DEMO_USER_ID') && (
-                        <div className="text-center py-12 text-red-500 border-2 border-dashed border-red-300 rounded-lg">
-                            <p className="text-xl font-semibold mb-2">Leads feature is disabled.</p>
-                            <p>Firebase configuration is missing (running locally). Data cannot be loaded or saved.</p>
+                    {isConnectionError && (
+                        <div className="text-center py-12 text-red-600 border-2 border-dashed border-red-400 rounded-lg bg-red-50">
+                            <p className="text-xl font-bold mb-3">Connection Error or Missing Firebase Config.</p>
+                            <p className="text-base">Please ensure your Firebase project is correctly linked in your deployment environment settings.</p>
+                            <p className="text-sm mt-2">Data cannot be loaded or saved until connected.</p>
                         </div>
                     )}
 
-                    {!isLoading && db && userId !== 'LOCAL_DEMO_USER_ID' && leads.length === 0 && (
+                    {!isLoading && !isConnectionError && leads.length === 0 && (
                         <div className="text-center py-12 text-gray-500 border-2 border-dashed border-gray-300 rounded-lg">
                             <p className="text-xl font-semibold mb-2">No saved Leads found.</p>
                             <p>Please export a PDF quote to save your data.</p>
                         </div>
                     )}
 
-                    {!isLoading && leads.length > 0 && (
+                    {!isLoading && !isConnectionError && leads.length > 0 && (
                         <div className="space-y-6">
                             {leads.map((lead) => (
                                 <div key={lead.id} className="bg-gray-50 p-5 rounded-lg border border-gray-200 shadow-sm transition-shadow hover:shadow-md">
@@ -294,14 +309,12 @@
                                         <span className="text-xs text-gray-500 whitespace-nowrap">Saved At: {lead.createdAt}</span>
                                     </div>
                                     
-                                    {/* Customer Contact Info */}
                                     <h4 className="font-semibold text-base mb-2 text-gray-700">Customer Contact Details:</h4>
                                     <div className="grid grid-cols-2 text-sm gap-x-4 gap-y-1 mb-4">
                                         <p><strong>Email:</strong> {lead.email}</p>
                                         <p><strong>Phone:</strong> {lead.phone || 'N/A'}</p>
                                     </div>
 
-                                    {/* Project Parameters */}
                                     <h4 className="font-semibold text-base mt-3 mb-2 text-gray-700 border-t pt-3">Project Parameters:</h4>
                                     <div className="grid grid-cols-2 md:grid-cols-4 text-xs gap-x-4 gap-y-2">
                                         <p><strong>Location:</strong> {lead.projectParams.location}</p>
@@ -314,7 +327,6 @@
                                         <p><strong>Services:</strong> <span className={`font-mono px-1 rounded ${lead.projectParams.includeServices ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-800'}`}>{lead.projectParams.includeServices ? 'Included' : 'Excluded'}</span></p>
                                     </div>
 
-                                    {/* Result Summary */}
                                     <div className="mt-4 pt-3 border-t border-gray-300">
                                         <p>
                                             <strong>Total Estimated Cost:</strong> 
@@ -411,52 +423,70 @@
             // Firebase State
             const [db, setDb] = useState(null);
             const [auth, setAuth] = useState(null);
-            const [userId, setUserId] = useState(null);
-            const [isLocalMode, setIsLocalMode] = useState(false); // New state to track local running
-            const [isAuthReady, setIsAuthReady] = useState(false); // Tracks if auth check is complete
+            const [userId, setUserId] = useState('Authenticating...'); // Initial state
+            const [isLocalMode, setIsLocalMode] = useState(false); 
+            const [isAuthReady, setIsAuthReady] = useState(false);
 
             // --- Firebase Initialization ---
             useEffect(() => {
+                // Wait for window.FB to be populated by module script
                 if (!window.FB) return;
                 
-                // 运行时环境会自动注入这些全局变量：__app_id, __firebase_config, __initial_auth_token
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
                 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-                // 检查 Firebase 配置是否缺失 (通常在本地运行时发生)
-                if (Object.keys(firebaseConfig).length === 0) {
-                    console.warn("Running locally: Firebase configuration missing. Leads feature will be disabled.");
-                    // 设置一个演示 ID 并启用本地模式
+                // Resolve Configuration
+                let firebaseConfig = {};
+                try {
+                    // Priority 1: Environment Variable
+                    if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+                        firebaseConfig = JSON.parse(__firebase_config);
+                    } 
+                    // Priority 2: Hardcoded User Config (Fallback)
+                    else if (USER_FIREBASE_CONFIG && USER_FIREBASE_CONFIG.apiKey) {
+                        console.log("Using hardcoded USER_FIREBASE_CONFIG");
+                        firebaseConfig = USER_FIREBASE_CONFIG;
+                    }
+                } catch (e) {
+                    console.error("Error parsing firebase config:", e);
+                }
+
+                // Check validity
+                if (!firebaseConfig.apiKey) {
+                    console.warn("No valid Firebase configuration found. Running in Local Demo mode.");
                     setUserId('LOCAL_DEMO_USER_ID'); 
                     setIsLocalMode(true);
-                    setIsAuthReady(true); // 即使是本地模式，认证过程也算完成了
+                    setIsAuthReady(true); 
                     return; 
                 }
 
                 try {
+                    // Initialize Firebase
                     const app = window.FB.initializeApp(firebaseConfig);
                     const firestore = window.FB.getFirestore(app);
                     const authentication = window.FB.getAuth(app);
                     setDb(firestore);
                     setAuth(authentication);
-                    setIsLocalMode(false); // 确认运行在具有配置的环境中
+                    setIsLocalMode(false); 
 
                     const unsubscribe = window.FB.onAuthStateChanged(authentication, async (user) => {
                         if (user) {
                             setUserId(user.uid);
                         } else {
-                            if (initialAuthToken) await window.FB.signInWithCustomToken(authentication, initialAuthToken);
-                            else await window.FB.signInAnonymously(authentication);
-                            // Set userId after successful sign-in
-                            setUserId(authentication.currentUser.uid);
+                            if (initialAuthToken) {
+                                await window.FB.signInWithCustomToken(authentication, initialAuthToken);
+                            } else {
+                                await window.FB.signInAnonymously(authentication);
+                            }
+                            if (authentication.currentUser) {
+                                setUserId(authentication.currentUser.uid);
+                            }
                         }
-                        setIsAuthReady(true); // 认证流程结束
+                        setIsAuthReady(true); 
                     });
                     return () => unsubscribe();
                 } catch (e) { 
                     console.error("Firebase Init Error:", e);
-                    // 发生错误时的回退处理
                     setUserId('FIREBASE_ERROR');
                     setIsAuthReady(true);
                 }
@@ -465,21 +495,18 @@
             // --- Toggle View Logic (including password check) ---
             const handleViewToggle = () => {
                 if (viewMode === 'estimator') {
-                    // Check password when switching from estimator to Leads viewer
                     if (isLeadsPasswordConfirmed) {
                         setViewMode('viewer');
                     } else {
                         setShowLeadsPasswordModal(true);
                     }
                 } else {
-                    // Returning from Leads viewer to estimator
                     setViewMode('estimator');
                 }
             };
             
             const handlePasswordConfirm = () => {
                 setShowLeadsPasswordModal(false);
-                // Allow viewing leads if password confirmed
                 setIsLeadsPasswordConfirmed(true); 
                 setViewMode('viewer');
             };
@@ -558,24 +585,30 @@
             useEffect(() => { calculate(); }, [input]);
 
 
-            // --- Lead Saving and Export (Preserved to include all necessary data) ---
+            // --- Lead Saving and Export ---
             const handleLeadSubmit = async (leadData) => {
                 setIsSaving(true);
 
-                // If in local mode, skip Firestore save
-                if (isLocalMode) {
-                    console.log("Local mode detected. Skipping Firestore save.");
+                if (isLocalMode || userId === 'FIREBASE_ERROR') {
+                    console.log("Local mode or Firebase Error detected. Skipping Firestore save.");
                 }
-                else if (db && userId && userId !== 'FIREBASE_ERROR') {
+                else if (db && userId) {
+                    if (!isAuthReady) {
+                        console.error("Auth not ready. Cannot save lead yet.");
+                        setIsSaving(false);
+                        setShowModal(false);
+                        setTimeout(() => window.print(), 500);
+                        return;
+                    }
+                    
                     try {
                         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                        // Storage Path: /artifacts/{appId}/users/{userId}/leads
                         const leadsRef = window.FB.collection(db, `artifacts/${appId}/users/${userId}/leads`);
                         
                         await window.FB.addDoc(leadsRef, {
-                            ...leadData, // Contains customer contact details
-                            projectParams: input, // Contains all project parameters
-                            projectResult: result, // Contains all calculation results
+                            ...leadData, 
+                            projectParams: input, 
+                            projectResult: result, 
                             createdAt: window.FB.serverTimestamp()
                         });
                         console.log("Lead saved successfully");
@@ -586,14 +619,21 @@
                 
                 setIsSaving(false);
                 setShowModal(false);
-                // Trigger PDF print
                 setTimeout(() => window.print(), 500); 
             };
             
             // --- Main Render Logic ---
-            const displayUserId = isAuthReady 
-                                ? (userId === 'LOCAL_DEMO_USER_ID' ? 'Local Demo' : userId) 
-                                : 'Authenticating...';
+            let displayUserId;
+            if (userId === 'Authenticating...') {
+                displayUserId = 'Authenticating...';
+            } else if (isLocalMode) {
+                displayUserId = 'Local Demo (No Auth)';
+            } else if (userId === 'FIREBASE_ERROR') {
+                displayUserId = 'Firebase Error (Check Console)';
+            } else {
+                displayUserId = userId;
+            }
+
 
             return (
                 <div className="min-h-screen p-4 md:p-8 max-w-5xl mx-auto watermark-container flex flex-col">
@@ -614,14 +654,16 @@
                             <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight leading-none">Copilot Industry 4.0</h1>
                             <p className="text-xl font-medium text-gray-500 mt-1">Private Mobile Network Instant Bill of Materials Estimator</p>
                         </div>
+                        <div className="user-info text-xs text-gray-400 mt-2 max-w-full overflow-x-auto p-1 border border-gray-200 rounded-lg whitespace-nowrap">
+                            Current Status/User ID: <span className="font-mono text-slate-600 font-bold">{displayUserId}</span>
+                        </div>
                     </header>
                     
-                    {/* Main Content Area - using flex-1 to ensure LeadsViewer fills space */}
+                    {/* Main Content */}
                     <main className="flex-1">
-                        {/* Conditional Rendering of Views */}
                         {viewMode === 'estimator' && (
                             <div className="grid md:grid-cols-12 gap-6 grid-container fade-in">
-                                {/* LEFT: Input Panel */}
+                                {/* Input Panel */}
                                 <div id="input-panel" className="md:col-span-5 bg-white p-6 rounded-xl shadow-lg border border-blue-100 h-fit">
                                     <h2 className="text-xl font-semibold mb-6 flex items-center text-slate-800">
                                         <span className="bg-blue-600 text-white w-7 h-7 rounded-full flex items-center justify-center text-sm mr-2 shadow-sm">1</span> Project Parameters
@@ -768,13 +810,13 @@
                         )}
                     </main>
 
-                    {/* Bottom Footer (includes discreet Leads viewing button and User ID) */}
+                    {/* Bottom Footer */}
                     <footer className="mt-12 text-center text-gray-400 text-sm pb-8 print-hide">
                         {/* Mandatory display of userId for multi-user data path distinction */}
                         <div className="user-info text-xs text-gray-400 mb-2 max-w-full overflow-x-auto p-1 border border-gray-200 rounded-lg whitespace-nowrap inline-block">
-                            Current User ID: <span className="font-mono text-slate-600">{displayUserId}</span>
+                            Current Status/User ID: <span className="font-mono text-slate-600 font-bold">{displayUserId}</span>
                         </div>
-                        <p className="mb-1">© 2025 ProNet Team | Beta v1.7 | Mode: {isLocalMode ? 'Local Demo (No Data Save)' : 'Deployment (Firebase Ready)'}</p>
+                        <p className="mb-1">© 2025 ProNet Team | Beta v1.8 | Mode: {isLocalMode ? 'Local Demo (No Data Save)' : 'Deployment (Firebase Ready)'}</p>
                         <p className="text-xs mt-2 max-w-2xl mx-auto">Disclaimer: This tool provides rough estimates only based on typical industry values. Actual costs depend on site survey, wall materials, and specific vendor negotiations. Transmission line rental and electricity costs are not included.</p>
                         
                         {/* Moved, discreet Leads viewing button */}
