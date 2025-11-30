@@ -16,7 +16,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, setLogLevel, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Set Firebase log level to Error
         try { setLogLevel('error'); } catch (e) {}
@@ -34,7 +34,9 @@
             serverTimestamp,
             query,
             onSnapshot,
-            orderBy
+            orderBy,
+            deleteDoc,
+            doc
         };
         
         console.log("Firebase modules loaded into window.FB");
@@ -195,6 +197,20 @@
                 }
             }, [db]);
 
+            // --- Delete Lead Function ---
+            const handleDelete = async (leadId, leadName) => {
+                if (!confirm(`Are you sure you want to delete the record for "${leadName}"? This cannot be undone.`)) return;
+                
+                try {
+                    const appId = 'default-app-id';
+                    const leadsPath = `artifacts/${appId}/public/data/leads`;
+                    await window.FB.deleteDoc(window.FB.doc(db, leadsPath, leadId));
+                } catch (err) {
+                    console.error("Error deleting lead:", err);
+                    alert("Failed to delete lead. Please check permissions.");
+                }
+            };
+
             // --- Export to Excel Function ---
             const downloadCSV = () => {
                 if (!leads || leads.length === 0) {
@@ -202,32 +218,17 @@
                     return;
                 }
 
-                // Helper to escape CSV characters (quotes, commas)
                 const escapeCSV = (str) => {
                     if (str === null || str === undefined) return "";
                     return `"${String(str).replace(/"/g, '""')}"`;
                 };
                 
-                // 1. Define Headers
                 const headers = [
-                    "Name", 
-                    "Company", 
-                    "Email", 
-                    "Phone", 
-                    "Date Saved", 
-                    "Location", 
-                    "Scenario", 
-                    "Technology", 
-                    "Vendor", 
-                    "Deployment", 
-                    "Total Area", 
-                    "Frequency Band", 
-                    "Services Included", 
-                    "Est. Min Cost", 
-                    "Est. Max Cost"
+                    "Name", "Company", "Email", "Phone", "Date Saved", 
+                    "Location", "Scenario", "Technology", "Vendor", "Deployment", 
+                    "Total Area", "Frequency Band", "Services Included", "Est. Min Cost", "Est. Max Cost"
                 ];
                 
-                // 2. Map Data Rows
                 const rows = leads.map(lead => [
                     lead.name,
                     lead.company,
@@ -246,13 +247,11 @@
                     lead.projectResult.grandTotalMax
                 ]);
                 
-                // 3. Build CSV String
                 const csvContent = [
                     headers.map(escapeCSV).join(","),
                     ...rows.map(row => row.map(escapeCSV).join(","))
                 ].join("\n");
                 
-                // 4. Trigger Download
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                 const link = document.createElement("a");
                 const url = URL.createObjectURL(blob);
@@ -283,25 +282,31 @@
                     {!isLoading && leads.length > 0 && (
                         <div className="space-y-6">
                             {leads.map((lead) => (
-                                <div key={lead.id} className="bg-gray-50 p-5 rounded-lg border border-gray-200 shadow-sm">
-                                    <div className="flex justify-between items-start mb-4 border-b pb-2">
-                                        <div className="font-bold text-xl text-blue-600">{lead.name} ({lead.company})</div>
+                                <div key={lead.id} className="bg-gray-50 p-5 rounded-lg border border-gray-200 shadow-sm relative group">
+                                    <button 
+                                        onClick={() => handleDelete(lead.id, lead.name)}
+                                        className="absolute top-4 right-4 text-red-400 hover:text-red-600 transition-colors p-2 rounded-full hover:bg-red-50"
+                                        title="Delete this record"
+                                    >
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                    </button>
+                                    
+                                    <div className="flex justify-between items-start mb-4 border-b pb-2 pr-10">
+                                        <div className="font-bold text-xl text-blue-600">{lead.name} <span className="text-gray-500 font-normal text-lg">({lead.company})</span></div>
                                         <span className="text-xs text-gray-500 whitespace-nowrap">Saved: {lead.createdAt}</span>
                                     </div>
                                     <div className="grid grid-cols-2 text-sm gap-x-4 gap-y-1 mb-4">
                                         <p><strong>Email:</strong> {lead.email}</p>
                                         <p><strong>Phone:</strong> {lead.phone || 'N/A'}</p>
+                                        <p><strong>Company:</strong> {lead.company}</p>
                                     </div>
                                     <h4 className="font-semibold text-base mt-3 mb-2 text-gray-700 border-t pt-3">Project Parameters:</h4>
                                     <div className="grid grid-cols-2 md:grid-cols-4 text-xs gap-x-4 gap-y-2">
                                         <p><strong>Loc:</strong> {lead.projectParams.location}</p>
                                         <p><strong>Tech:</strong> {lead.projectParams.technology}</p>
                                         <p><strong>Vendor:</strong> {vendors[lead.projectParams.vendor]?.name.split(' / ')[0]}</p>
-                                        
-                                        {/* ADDED FIELDS */}
                                         <p><strong>Total Area:</strong> {lead.projectParams.area} {lead.projectParams.scenario === 'mine' ? 'm' : 'sq m'}</p>
                                         <p><strong>Frequency:</strong> {lead.projectParams.freq}</p>
-
                                         <p><strong>Est. Cost:</strong> {fmtMoney(lead.projectResult.grandTotalMin)} - {fmtMoney(lead.projectResult.grandTotalMax)}</p>
                                     </div>
                                 </div>
@@ -348,9 +353,8 @@
             
             const [db, setDb] = useState(null);
             const [auth, setAuth] = useState(null);
-            const [statusText, setStatusText] = useState('Initializing...');
-            const [isFirebaseReady, setIsFirebaseReady] = useState(false);
-            const [userId, setUserId] = useState(null);
+            const [userId, setUserId] = useState('Authenticating...'); 
+            const [isAuthReady, setIsAuthReady] = useState(false);
 
             // Handlers defined inside App to be accessible
             const handlePasswordCancel = () => setShowLeadsPasswordModal(false);
@@ -359,13 +363,24 @@
             useEffect(() => {
                 if (!window.FB) return;
                 
-                // Always use the Hardcoded Config for stability in this environment
-                const firebaseConfig = USER_FIREBASE_CONFIG;
-                // Since we are using hardcoded config, we MUST ignore the environment auth token 
-                // to avoid project mismatch errors.
-                const initialAuthToken = null; 
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                let firebaseConfig = {};
+                
+                try {
+                    if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+                        firebaseConfig = JSON.parse(__firebase_config);
+                    } else if (USER_FIREBASE_CONFIG && USER_FIREBASE_CONFIG.apiKey) {
+                        firebaseConfig = USER_FIREBASE_CONFIG;
+                    }
+                } catch (e) { console.error("Error parsing firebase config:", e); }
 
-                console.log("Starting Firebase Init with config:", firebaseConfig.projectId);
+                if (!firebaseConfig.apiKey) {
+                    console.warn("No valid Firebase configuration found. Leads feature disabled.");
+                    setUserId('CONFIG_ERROR'); 
+                    setIsAuthReady(true); 
+                    return; 
+                }
 
                 try {
                     const app = window.FB.initializeApp(firebaseConfig);
@@ -374,29 +389,25 @@
                     setDb(firestore); 
                     setAuth(authentication); 
 
-                    // Set up auth listener
                     const unsubscribe = window.FB.onAuthStateChanged(authentication, async (user) => {
                         if (user) {
                             console.log("User authenticated:", user.uid);
                             setUserId(user.uid);
-                            setStatusText('System Ready');
-                            setIsFirebaseReady(true);
                         } else {
-                            console.log("No user, attempting sign-in...");
-                            setStatusText('Authenticating...');
                             try {
                                 // Only anonymous auth is safe with mismatched tokens
                                 await window.FB.signInAnonymously(authentication);
                             } catch (err) { 
                                 console.error("Auth Attempt Failed:", err); 
-                                setStatusText('Auth Failed - Retry Refresh');
                             }
                         }
+                        setIsAuthReady(true); 
                     });
                     return () => unsubscribe();
                 } catch (e) { 
                     console.error("Init Critical Error:", e); 
-                    setStatusText('System Error');
+                    setUserId('FIREBASE_ERROR');
+                    setIsAuthReady(true);
                 }
             }, []);
             
@@ -434,9 +445,7 @@
 
             const handleLeadSubmit = async (leadData) => {
                 setIsSaving(true);
-                const appId = 'default-app-id'; // Always use default for consistency across devices
-                
-                // FIX: Save to PUBLIC path explicitly
+                const appId = 'default-app-id'; 
                 const savePath = `artifacts/${appId}/public/data/leads`;
 
                 if (db) {
@@ -458,6 +467,9 @@
             if (userId === 'Authenticating...') displayUserId = 'Authenticating...';
             else if (userId === 'FIREBASE_ERROR') displayUserId = 'Firebase Error';
             else displayUserId = userId;
+
+            const isFirebaseReady = userId !== 'Authenticating...' && userId !== 'FIREBASE_ERROR';
+            const statusText = isFirebaseReady ? 'System Ready' : userId;
 
             return (
                 <div className="min-h-screen p-4 md:p-8 max-w-5xl mx-auto watermark-container flex flex-col">
