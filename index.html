@@ -18,7 +18,7 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Set Firebase log level to Error to reduce console noise unless debugging
+        // Set Firebase log level to Error
         try { setLogLevel('error'); } catch (e) {}
 
         // Expose functions to the global window object
@@ -166,16 +166,11 @@
             const [isLoading, setIsLoading] = useState(true);
 
             useEffect(() => {
-                if (!db) { 
-                    setIsLoading(false); 
-                    return; 
-                }
+                if (!db) { setIsLoading(false); return; }
 
                 const appId = 'default-app-id';
                 const leadsPath = `artifacts/${appId}/public/data/leads`;
                 
-                console.log("Attempting to fetch leads from:", leadsPath);
-
                 try {
                     const leadsRef = window.FB.collection(db, leadsPath);
                     const q = window.FB.query(leadsRef, window.FB.orderBy('createdAt', 'desc'));
@@ -200,15 +195,89 @@
                 }
             }, [db]);
 
+            // --- Export to Excel Function ---
+            const downloadCSV = () => {
+                if (!leads || leads.length === 0) {
+                    alert("No leads to export.");
+                    return;
+                }
+
+                // Helper to escape CSV characters (quotes, commas)
+                const escapeCSV = (str) => {
+                    if (str === null || str === undefined) return "";
+                    return `"${String(str).replace(/"/g, '""')}"`;
+                };
+                
+                // 1. Define Headers
+                const headers = [
+                    "Name", 
+                    "Company", 
+                    "Email", 
+                    "Phone", 
+                    "Date Saved", 
+                    "Location", 
+                    "Scenario", 
+                    "Technology", 
+                    "Vendor", 
+                    "Deployment", 
+                    "Total Area", 
+                    "Frequency Band", 
+                    "Services Included", 
+                    "Est. Min Cost", 
+                    "Est. Max Cost"
+                ];
+                
+                // 2. Map Data Rows
+                const rows = leads.map(lead => [
+                    lead.name,
+                    lead.company,
+                    lead.email,
+                    lead.phone || "",
+                    lead.createdAt,
+                    lead.projectParams.location,
+                    lead.projectParams.scenario,
+                    lead.projectParams.technology,
+                    vendors[lead.projectParams.vendor]?.name || lead.projectParams.vendor,
+                    lead.projectParams.deployment,
+                    lead.projectParams.area + (lead.projectParams.scenario === 'mine' ? ' m' : ' sq m'),
+                    lead.projectParams.freq,
+                    lead.projectParams.includeServices ? "Yes" : "No",
+                    lead.projectResult.grandTotalMin,
+                    lead.projectResult.grandTotalMax
+                ]);
+                
+                // 3. Build CSV String
+                const csvContent = [
+                    headers.map(escapeCSV).join(","),
+                    ...rows.map(row => row.map(escapeCSV).join(","))
+                ].join("\n");
+                
+                // 4. Trigger Download
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement("a");
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", `MyProNet_Leads_Export_${new Date().toISOString().slice(0,10)}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+
             return (
                 <div className="bg-white p-6 rounded-xl shadow-lg border border-blue-100 min-h-[600px] fade-in w-full max-w-4xl mx-auto">
-                    <h2 className="text-3xl font-bold mb-8 text-slate-800 border-b pb-3 flex justify-between items-center">
-                        All Saved Quotation Records (Shared DB)
-                        <button onClick={() => setViewMode('estimator')} className="bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 px-4 rounded-lg font-medium text-sm transition-colors flex items-center gap-1">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
-                            Return to Estimator
-                        </button>
-                    </h2>
+                    <div className="flex flex-col md:flex-row justify-between items-center mb-8 border-b pb-4 gap-4">
+                        <h2 className="text-3xl font-bold text-slate-800">All Saved Quotation Records</h2>
+                        <div className="flex gap-2">
+                            <button onClick={downloadCSV} className="bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg font-bold text-sm transition-colors flex items-center gap-1 shadow-md">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                                Export to Excel (CSV)
+                            </button>
+                            <button onClick={() => setViewMode('estimator')} className="bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 px-4 rounded-lg font-medium text-sm transition-colors flex items-center gap-1">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                                Return to Estimator
+                            </button>
+                        </div>
+                    </div>
                     {isLoading && <div className="text-center py-12 text-blue-500 font-semibold">Loading data from centralized database...</div>}
                     {!isLoading && leads.length === 0 && <div className="text-center py-12 text-gray-500 border-2 border-dashed border-gray-300 rounded-lg"><p>No saved Leads found in the shared database.</p></div>}
                     {!isLoading && leads.length > 0 && (
@@ -228,6 +297,11 @@
                                         <p><strong>Loc:</strong> {lead.projectParams.location}</p>
                                         <p><strong>Tech:</strong> {lead.projectParams.technology}</p>
                                         <p><strong>Vendor:</strong> {vendors[lead.projectParams.vendor]?.name.split(' / ')[0]}</p>
+                                        
+                                        {/* ADDED FIELDS */}
+                                        <p><strong>Total Area:</strong> {lead.projectParams.area} {lead.projectParams.scenario === 'mine' ? 'm' : 'sq m'}</p>
+                                        <p><strong>Frequency:</strong> {lead.projectParams.freq}</p>
+
                                         <p><strong>Est. Cost:</strong> {fmtMoney(lead.projectResult.grandTotalMin)} - {fmtMoney(lead.projectResult.grandTotalMax)}</p>
                                     </div>
                                 </div>
@@ -380,6 +454,11 @@
                 setTimeout(() => window.print(), 500); 
             };
             
+            let displayUserId;
+            if (userId === 'Authenticating...') displayUserId = 'Authenticating...';
+            else if (userId === 'FIREBASE_ERROR') displayUserId = 'Firebase Error';
+            else displayUserId = userId;
+
             return (
                 <div className="min-h-screen p-4 md:p-8 max-w-5xl mx-auto watermark-container flex flex-col">
                     <header className="mb-8 flex flex-col items-center justify-center text-center print-hide">
