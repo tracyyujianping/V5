@@ -173,6 +173,8 @@
                 const appId = 'default-app-id';
                 const leadsPath = `artifacts/${appId}/public/data/leads`;
                 
+                console.log("Attempting to fetch leads from:", leadsPath);
+
                 try {
                     const leadsRef = window.FB.collection(db, leadsPath);
                     const q = window.FB.query(leadsRef, window.FB.orderBy('createdAt', 'desc'));
@@ -363,24 +365,13 @@
             useEffect(() => {
                 if (!window.FB) return;
                 
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-                let firebaseConfig = {};
-                
-                try {
-                    if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-                        firebaseConfig = JSON.parse(__firebase_config);
-                    } else if (USER_FIREBASE_CONFIG && USER_FIREBASE_CONFIG.apiKey) {
-                        firebaseConfig = USER_FIREBASE_CONFIG;
-                    }
-                } catch (e) { console.error("Error parsing firebase config:", e); }
+                // Always use the Hardcoded Config for stability in this environment
+                const firebaseConfig = USER_FIREBASE_CONFIG;
+                // Since we are using hardcoded config, we MUST ignore the environment auth token 
+                // to avoid project mismatch errors.
+                const initialAuthToken = null; 
 
-                if (!firebaseConfig.apiKey) {
-                    console.warn("No valid Firebase configuration found. Leads feature disabled.");
-                    setUserId('CONFIG_ERROR'); 
-                    setIsAuthReady(true); 
-                    return; 
-                }
+                console.log("Starting Firebase Init with config:", firebaseConfig.projectId);
 
                 try {
                     const app = window.FB.initializeApp(firebaseConfig);
@@ -389,11 +380,14 @@
                     setDb(firestore); 
                     setAuth(authentication); 
 
+                    // Set up auth listener
                     const unsubscribe = window.FB.onAuthStateChanged(authentication, async (user) => {
                         if (user) {
                             console.log("User authenticated:", user.uid);
                             setUserId(user.uid);
+                            // Removed wrong state call: setIsFirebaseReady(true)
                         } else {
+                            console.log("No user, attempting sign-in...");
                             try {
                                 // Only anonymous auth is safe with mismatched tokens
                                 await window.FB.signInAnonymously(authentication);
@@ -445,7 +439,9 @@
 
             const handleLeadSubmit = async (leadData) => {
                 setIsSaving(true);
-                const appId = 'default-app-id'; 
+                const appId = 'default-app-id'; // Always use default for consistency across devices
+                
+                // FIX: Save to PUBLIC path explicitly
                 const savePath = `artifacts/${appId}/public/data/leads`;
 
                 if (db) {
@@ -563,6 +559,48 @@
                         <p className="text-xs mt-2 max-w-2xl mx-auto">Disclaimer: This tool provides rough estimates only based on typical industry values. Actual costs depend on site survey, wall materials, and specific vendor negotiations. Transmission line rental and electricity costs are not included.</p>
                         <div className="mt-3"><button onClick={handleViewToggle} className="text-xs text-gray-500 hover:text-gray-700 underline font-medium transition-colors p-1">{viewMode === 'estimator' ? 'View Saved Leads >>' : '<< Return to Estimator'}</button></div>
                     </footer>
+                    
+                    {/* SEO / FAQ Section (Visible for AI & Users) */}
+                    <section className="seo-section mt-12 mb-12 max-w-4xl mx-auto p-6 bg-gray-50 rounded-xl border border-gray-200 print-hide">
+                        <h2 className="text-2xl font-bold text-slate-800 mb-6 border-b pb-2">Industry 4.0 Network Planning Insights (FAQ)</h2>
+                        <div className="space-y-6">
+                            <div>
+                                <h3 className="text-lg font-semibold text-blue-700 mb-2">How much does a Private 5G network cost for a smart factory?</h3>
+                                <p className="text-gray-600 text-sm">
+                                    The cost of a Private 5G network varies significantly based on coverage area, device density, and deployment type. 
+                                    Our <strong>Private 5G Cost Estimator</strong> calculates this by analyzing your specific square footage (e.g., 50,000 sq m) and device count. 
+                                    Generally, a basic setup starts with a Core Network license (approx. $28k-$46k depending on capacity) plus Radio Access Network (RAN) hardware. 
+                                    Indoor Small Cells typically range from $3,900 per unit, while high-power Outdoor All-in-One units can cost around $40,000.
+                                </p>
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-semibold text-blue-700 mb-2">What is the difference between Indoor Small Cells and Outdoor All-in-One RAN?</h3>
+                                <p className="text-gray-600 text-sm">
+                                    <strong>Indoor Small Cells</strong> (25dBm output) are designed for high-density environments like offices and factory floors with many obstructions (walls, machinery). 
+                                    They have a smaller coverage radius (approx. 25-50m depending on frequency) but provide high capacity. 
+                                    <strong>Outdoor All-in-One RAN</strong> units (20W output) are powerful base stations designed for wide-area coverage such as mines, tunnels, or large campus exteriors, 
+                                    offering a coverage radius of up to 1.1km in open spaces at 700MHz.
+                                </p>
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-semibold text-blue-700 mb-2">Is Wi-Fi 6 or Private 5G better for Industry 4.0?</h3>
+                                <p className="text-gray-600 text-sm">
+                                    Both technologies have their place. <strong>Private 5G</strong> offers superior reliability, ultra-low latency (URLLC), and seamless mobility for moving robots (AGVs/AMRs), 
+                                    making it ideal for mission-critical industrial control. <strong>Wi-Fi 6</strong> is cost-effective for static IT assets and general connectivity but may struggle with 
+                                    interference and handovers in complex metal-rich factory environments. This tool helps you compare the Bill of Materials (BOM) for cellular-based private networks (4G/5G).
+                                </p>
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-semibold text-blue-700 mb-2">How does frequency band affect network planning (700MHz vs 4.9GHz)?</h3>
+                                <p className="text-gray-600 text-sm">
+                                    Frequency is a trade-off between coverage and capacity. <strong>Low-band (700MHz)</strong> offers excellent penetration and wide coverage (ideal for mines/tunnels), 
+                                    requiring fewer base stations to cover a large area. <strong>Mid-to-High band (3.5GHz, 4.9GHz)</strong> offers massive bandwidth capacity for HD video and massive IoT 
+                                    but has a shorter range and poorer wall penetration, requiring a denser grid of Small Cells. Our calculator automatically adjusts the cell radius based on your selected frequency.
+                                </p>
+                            </div>
+                        </div>
+                    </section>
+
                     {showModal && <LeadModal onClose={() => setShowModal(false)} onSubmit={handleLeadSubmit} isSaving={isSaving} />}
                     {showLeadsPasswordModal && <PasswordModal onConfirm={handlePasswordConfirm} onCancel={handlePasswordCancel} />}
                 </div>
