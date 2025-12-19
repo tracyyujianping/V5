@@ -3,7 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Copilot Industry 4.0 Network Estimator</title>
+    
+    <!-- 1. SEO & GEO Optimization (Hardcoded for Validators) -->
+    <title>Copilot Industry 4.0 Network Estimator | Private 5G & Wi-Fi 6 Cost Calculator</title>
+    <meta name="description" content="Free tool to estimate the Bill of Materials (BOM) and CAPEX for Industry 4.0 Private Mobile Networks (5G/4G) and Wi-Fi 6. Ideal for smart factories, mines, and warehouses.">
+    <meta name="keywords" content="Private 5G Cost Estimator, Industrial Wi-Fi 6 Calculator, Private Network BOM, Small Cell Pricing, All-in-One RAN, Industry 4.0 Connectivity">
+    <meta name="author" content="ProNet Team">
+    
+    <!-- 2. Schema.org JSON-LD (Hardcoded in HEAD for AI/Search Engine Detection) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Copilot Industry 4.0 Network Estimator",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web Browser",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "description": "A professional estimation tool for Private 5G, 4G LTE, and Wi-Fi 6 network deployment costs in industrial environments. Calculates hardware, installation, and service fees.",
+      "featureList": [
+        "Automatic BOM generation", 
+        "Coverage radius calculation based on frequency (700M - 4.9G)", 
+        "Indoor vs Outdoor deployment logic",
+        "PDF Quote Export",
+        "Lead Management"
+      ],
+      "provider": {
+        "@type": "Organization",
+        "name": "ProNet Team",
+        "email": "MyProNet2025@gmail.com"
+      }
+    }
+    </script>
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- React & ReactDOM -->
@@ -12,16 +47,14 @@
     <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    <!-- 1. FIREBASE Module Imports -->
+    <!-- 3. FIREBASE Module Imports -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, setLogLevel, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Set Firebase log level to Error
         try { setLogLevel('error'); } catch (e) {}
 
-        // Expose functions to the global window object
         window.FB = {
             initializeApp,
             getAuth,
@@ -67,7 +100,7 @@
             @page { margin: 1cm; size: A4 portrait; }
             body { background-color: #ffffff; color: #000000; font-size: 11pt; height: 100%; width: 100%; }
             .min-h-screen, #root, .main, .grid-container { display: block !important; height: auto !important; width: 100% !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }
-            header, footer, .print-hide, .export-button, .notification-banner, .modal-overlay, .user-info, #input-panel { display: none !important; }
+            header, footer, .print-hide, .export-button, .notification-banner, .modal-overlay, .user-info, #input-panel, .seo-section { display: none !important; }
             .summary-card-container, .metrics-grid, .contact-box { display: none !important; }
             #result-panel { box-shadow: none !important; border: none !important; padding: 0 !important; margin: 0 !important; width: 100% !important; max-width: none !important; }
             .print-header-proposal { display: block !important; text-align: center; margin-bottom: 30px; border-bottom: 2px solid #1e3a8a; padding-bottom: 15px; }
